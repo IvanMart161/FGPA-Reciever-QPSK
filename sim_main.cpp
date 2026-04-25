@@ -9,15 +9,11 @@
 
 vluint64_t main_time = 0;
 
-uint32_t quant(double voltage, double v_ref, int bits) {
-    if (voltage < 0) {
-        voltage = 0;
-    } else if (voltage > v_ref) {
-        voltage = v_ref;
-    }
-    
-    double q_step = v_ref / pow(2,bits);
-    return (uint32_t)(voltage / q_step);
+uint16_t quant(double voltage) {
+    if (voltage > 1) voltage = 1;
+    else if(voltage < -1) voltage = -1;
+
+    return (int16_t)(voltage*16384.0);
 }
 
 int main (int argc, char **argv) {
@@ -64,11 +60,13 @@ int main (int argc, char **argv) {
 // Generate signals 
 
 	double time_s = main_time * 1e-9;
+    
+    double V1 = 0.25 * cos(2 * M_PI * 1e6 * time_s);
+    double V2 = 0.25 * cos(2 * M_PI * 250e3 * time_s);
 
-	double V = 1.65 + 1.65 * sin(2 * M_PI * 1000000 * time_s );
-	top->ch_analog[0] = quant(V, V_REF, ADC_BITS);
+	top->ch_analog[0] = quant(V1);
 
-	top->ch_analog[1] = quant(1.0, V_REF, ADC_BITS);
+	top->ch_analog[1] = quant(V2);
 
 // First packet SDIO
 

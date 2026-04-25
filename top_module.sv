@@ -5,7 +5,7 @@ module top_module #(
     input logic                 reset,
 
 // Входы для АЦП
-    input logic     [DATA-1:0]  ch_analog [0:1],
+    input logic signed     [DATA-1:0]  ch_analog [0:1],
     input logic                 clk_ad,
     
 // Команды мастера
@@ -14,7 +14,7 @@ module top_module #(
     input logic                 addr_cmd,
     input logic     [1:0]       data_cmd,
 
-    output logic    [31:0]      digital_out
+    output logic signed    [15:0]      digital_out [0:3]
 );
     wire sdio_wire;
     wire sclk_wire;
