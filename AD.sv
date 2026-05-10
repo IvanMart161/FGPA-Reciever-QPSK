@@ -1,23 +1,25 @@
 module AD #(
-    parameter DATA = 16
+    parameter DATA = 16,
+    parameter LANES = 8
 ) (
-    input logic                     clk,
-    input logic                     reset,
+    input logic                          clk,
+    input logic                          reset,
 
 //Входы для двух каналов АЦП 
-    input logic signed     [DATA-1:0]      analog_in [0:1],
-    input logic                     clk_ad,                          
+    input logic signed     [DATA-1:0]    analog_in [0:1],
+    input logic                          clk_ad,                          
 
 // Внешние пины для связи с spi_master
-    input logic                     SDIO,        
-    input logic                     SCLK,
-    input logic                     CSB,                     
+    input logic                          SDIO,        
+    input logic                          SCLK,
+    input logic                          CSB,                     
 
-    output logic signed    [DATA-1:0]    digital_out [0:3]
+    output logic signed    [DATA-1:0]    digital_out [0:LANES-1],
+    output logic                         data_valid
 );
 
 
-//==============Реализация внешнего устройства для АЦП==============
+//===========Реализация внешнего устройства для АЦП==============
 
 logic [3:0] GAIN;
 logic CHANNEL;                                                                                                                               
@@ -72,29 +74,42 @@ always_ff @( posedge clk ) begin
 end
 
 //==============Реализация логики оцифровки аналогового сигнала==============
-logic clk_ad_prev;
+
 logic signed [DATA-1:0] analog_in_selected;
+
+//Внутреннние переменные для нкаопления
+logic [2:0] sample_cnt;
+logic signed [DATA-1:0] buffer [0:LANES-1];
 
 assign analog_in_selected = (CHANNEL == 1'b0) ? analog_in[0] : analog_in[1];                                                         // Выбираем канал
 
-always_ff @(posedge clk) begin
+always_ff @(posedge clk_ad) begin
     if(reset) begin
-        clk_ad_prev <= 1'b0;
-    	digital_out[0] <= 0;
-    	digital_out[1] <= 0;
-    	digital_out[2] <= 0;
-    	digital_out[3] <= 0;
-    end else begin
-            clk_ad_prev <= clk_ad;
-
-        if(clk_ad_prev == 1'b0 && clk_ad == 1'b1) begin
-            digital_out[0] <= analog_in_selected * $signed({1'b0, GAIN});
-            digital_out[1] <= digital_out[0];
-            digital_out[2] <= digital_out[1];
-            digital_out[3] <= digital_out[2]; 
-                        // Стробирующий импульс для АЦП, который будет действовать в течение одного такта, что позволяет нам захватить значение аналогового сигнала в момент его изменения
- 
+        data_valid <= 1'b0;
+        sample_cnt <= '0;
+        for (int j = 0; j < LANES; j++) begin
+            digital_out[j] <= '0;
+            buffer[j] <= '0; 
         end
+    end else begin
+
+                for (int j = 0; j < LANES-1; j++) begin
+                     buffer[j] <= buffer [j+1];
+                end
+                buffer[LANES-1] <= analog_in_selected * $signed({1'b0, GAIN});
+                
+                if (sample_cnt == 3'd7) begin
+                    sample_cnt <= '0;
+                    for(int j = 0; j < LANES-1; j++) begin
+                         digital_out[j] <= buffer[j+1];
+                    end                   
+                    digital_out[LANES-1] <= analog_in_selected * $signed({1'b0, GAIN});
+                    data_valid <= 1'b1; 
+                end else begin 
+                    sample_cnt <= sample_cnt + 1'b1;
+                    data_valid <= 1'b0;
+                end 
+
     end
     
 end

@@ -1,27 +1,34 @@
+`timescale 100ps / 100ps
+
 module top_module #(
-    parameter DATA = 16
+    parameter DATA = 16,
+    parameter LANES = 8 
 ) (
     input logic                 clk,
     input logic                 reset,
 
-// Входы для АЦП
-    input logic signed     [DATA-1:0]  ch_analog [0:1],
+    // Входы для АЦП
+    input logic signed [DATA-1:0] ch_analog [0:1],
     input logic                 clk_ad,
     
-// Команды мастера
+    // Команды мастера
     input logic                 start_cmd,
     input logic                 rnw_cmd,                                                    
     input logic                 addr_cmd,
-    input logic     [1:0]       data_cmd,
+    input logic [1:0]           data_cmd,
 
-    output logic signed    [15:0]      digital_out [0:3]
+    // Выходы: теперь их 8, и мы добавили data_valid
+    output logic signed [DATA-1:0] digital_out [0:LANES-1],
+    output logic                   data_valid_out
 );
+
     wire sdio_wire;
     wire sclk_wire;
     wire csb_wire;
 
     AD #(
-        .DATA(DATA)
+        .DATA(DATA),
+        .LANES(LANES) 
     ) adc (
         .clk(clk),
         .reset(reset),
@@ -30,7 +37,8 @@ module top_module #(
         .SDIO(sdio_wire),
         .SCLK(sclk_wire),
         .CSB(csb_wire),
-        .digital_out(digital_out)
+        .digital_out(digital_out),
+        .data_valid(data_valid_out) 
     );
 
     spi_master #(

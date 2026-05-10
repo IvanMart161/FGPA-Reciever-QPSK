@@ -1,19 +1,24 @@
 #include <iostream>
 #include <cmath>
+#include <string>
 #include <memory>
+#include <fstream>
 
 #include <verilated.h>
 #include <verilated_vcd_c.h>
 
-#include "Vtop_module.h"
+// Убедись, что тут правильное имя твоего топ-модуля! 
+// Если компилируешь top_module.sv, то оставляй Vtop_module.h
+#include "Vtop_module.h" 
 
 vluint64_t main_time = 0;
 
+// Квантователь на 12 бит (от -2048 до +2047)
 uint16_t quant(double voltage) {
-    if (voltage > 1) voltage = 1;
-    else if(voltage < -1) voltage = -1;
+    if (voltage > 1.0) voltage = 1.0;
+    else if(voltage < -1.0) voltage = -1.0;
 
-    return (int16_t)(voltage*16384.0);
+    return (uint16_t)((int16_t)(voltage * 2047.0));
 }
 
 int main (int argc, char **argv) {
@@ -24,6 +29,7 @@ int main (int argc, char **argv) {
     VerilatedVcdC *tfp = new VerilatedVcdC;
     top->trace(tfp, 99);
     tfp->open("waveform.vcd");
+
     
     top->clk = 0;
     top->clk_ad = 0;
@@ -35,90 +41,116 @@ int main (int argc, char **argv) {
     top->ch_analog[0] = 0;
     top->ch_analog[1] = 0;
 
+    std::ofstream csv_file("signal_data.csv");
+    csv_file << "time_s,ch_analog_0\n";
+
+    // ==========================================
+    // 1. НАСТРОЙКИ ВРЕМЕНИ И ЧАСТОТ
+    // ==========================================
+    const double TIME_STEP_S = 0.1e-9;      // Шаг: 0.1 нс
+    const double FREQ_FPGA = 150e6;         // ПЛИС: 150 МГц
+    const double FREQ_ADC  = 1.2e9;         // АЦП: 1.2 ГГц
+    const double HALF_PERIOD_FPGA = 1.0 / (2.0 * FREQ_FPGA);
+    const double HALF_PERIOD_ADC  = 1.0 / (2.0 * FREQ_ADC);
+
+    // ==========================================
+    // 2. РАДИО И ДАННЫЕ (QPSK)
+    // ==========================================
+    const double f_carrier = 500e6;   // Несущая 500 МГц
+    const int sym_period_ticks = 500; // Смена символа каждые 50 нс
     
+    // Наше сообщение
+    std::string message = "Hello world"; 
+    int total_bits = message.length() * 8;
+    int total_symbols = total_bits / 2; // 2 бита на символ
 
-    const double V_REF = 3.3;
-    const int ADC_BITS = 12;
+    double timer_fpga = 0.0;
+    double timer_adc = 0.0;
 
-    std::cout << "Testbench has been starting" << std::endl;
+    std::cout << "Starting simulation..." << std::endl;
+    std::cout << "Message: '" << message << "' (" << total_bits << " bits, " << total_symbols << " symbols)" << std::endl;
 
-    while (!Verilated::gotFinish() &&  main_time < 5000) {
+    // Симулируем 50 000 шагов (5 микросекунд)
+    while (!Verilated::gotFinish() && main_time < 50000) {
 
-	if(main_time == 20) top->reset = 0;
+        // Держим сброс активным 20 нс (200 тиков)
+        if(main_time == 200) top->reset = 0;
 
-	if (main_time % 10 < 5) {
-	    top->clk = 1;
-	} else {
-	    top->clk = 0;
-	}  
+        // --- ГЕНЕРАЦИЯ ТАКТОВ ---
+        timer_fpga += TIME_STEP_S;
+        if (timer_fpga >= HALF_PERIOD_FPGA) {
+            top->clk = !top->clk;           
+            timer_fpga -= HALF_PERIOD_FPGA; 
+        }
 
-	if(main_time % 100 < 50) {
-	    top->clk_ad = 1;
-	} else {
-	    top->clk_ad = 0;
-	}
-// Generate signals 
+        timer_adc += TIME_STEP_S;
+        if (timer_adc >= HALF_PERIOD_ADC) {
+            top->clk_ad = !top->clk_ad;
+            timer_adc -= HALF_PERIOD_ADC;
+        }
 
-	double time_s = main_time * 1e-9;
-    
-    double V1 = 0.25 * cos(2 * M_PI * 1e6 * time_s);
-    double V2 = 0.25 * cos(2 * M_PI * 250e3 * time_s);
+        // --- ГЕНЕРАЦИЯ QPSK СИГНАЛА С ДАННЫМИ ---
+        double time_s = main_time * TIME_STEP_S;
+        
+        // 1. Узнаем, какой сейчас по счету символ передается
+        // % total_symbols заставляет сообщение повторяться по кругу
+        int current_symbol = (main_time / sym_period_ticks) % total_symbols;
+        
+        // 2. Находим нужный байт и позицию бита
+        int byte_idx = (current_symbol * 2) / 8;
+        int bit_pos  = (current_symbol * 2) % 8;
+        
+        // 3. Вытаскиваем биты (от младших к старшим)
+        uint8_t current_byte = (uint8_t)message[byte_idx];
+        int bit_I = (current_byte >> bit_pos) & 0x01;
+        int bit_Q = (current_byte >> (bit_pos + 1)) & 0x01;
 
-	top->ch_analog[0] = quant(V1);
+        // 4. Превращаем биты в уровни: 1 -> +0.5, 0 -> -0.5
+        double I_val = (bit_I == 1) ? 0.5 : -0.5;
+        double Q_val = (bit_Q == 1) ? 0.5 : -0.5;
 
-	top->ch_analog[1] = quant(V2);
+        // 5. Модулируем несущую
+        double V_qpsk = I_val * cos(2 * M_PI * f_carrier * time_s) 
+                      - Q_val * sin(2 * M_PI * f_carrier * time_s);
 
-// First packet SDIO
+        // Второй канал оставим пустым (нули), чтобы не отвлекал, 
+        // или можешь вернуть туда синус при желании
+        top->ch_analog[0] = quant(V_qpsk);
+        top->ch_analog[1] = 0;
 
-	if (main_time == 100) {
-	    top->start_cmd = 1;
-	    top->rnw_cmd = 0;
-	    top->addr_cmd = 0;
-	    top->data_cmd = 1;
-       	}
+        // --- SPI Команды ---
+        if (main_time == 1000) {
+            top->start_cmd = 1;
+            top->rnw_cmd = 0;
+            top->addr_cmd = 0;
+            top->data_cmd = 1;
+        }
+        if (main_time == 2500){
+            top->start_cmd = 0;
+            top->rnw_cmd = 1;
+        }
 
-	if (main_time == 250){
-	    top->start_cmd = 0;
-	    top->rnw_cmd = 1;
-	}
+        // --- Запись состояния ---
+        top->eval();
+        tfp->dump(main_time);
 
-// Second packet SDIO
+       
+        csv_file << time_s << "," << (int16_t)top->ch_analog[0] << "\n";
 
-	if (main_time == 2500) {
-	    top->start_cmd = 1;
-	    top->rnw_cmd = 0;
-	    top->addr_cmd = 1;
-	    top->data_cmd = 0;
-       	}
-
-	if (main_time == 2650){
-	    top->start_cmd = 0;
-	    top->rnw_cmd = 1;
-	}
-
-// End while 
-	
-
-	top->eval();
-	tfp->dump(main_time);
-	main_time++;
-
+        main_time++;
     }
 
     top->eval();
-
     tfp->dump(main_time);
-
     main_time++;
 
-    std::cout << "Testbanch has already finished" << std::endl;
+    csv_file.close();
+    std::cout << "Simulation finished successfully!" << std::endl;
     tfp->close();
 
-    delete top;
-    delete tfp;
+    
     top->final();
+    delete top;
 
     return 0;
 }
-
-
