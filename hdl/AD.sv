@@ -1,3 +1,4 @@
+`timescale 100ps / 100ps
 module AD #(
     parameter DATA = 16,
     parameter LANES = 8

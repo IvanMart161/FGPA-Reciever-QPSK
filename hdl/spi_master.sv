@@ -1,3 +1,4 @@
+`timescale 100ps / 100ps
 module spi_master #(
     parameter addr = 1,
     parameter data = 2

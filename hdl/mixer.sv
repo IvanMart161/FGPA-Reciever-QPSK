@@ -1,3 +1,4 @@
+`timescale 100ps / 100ps
 module mixer #(
     parameter ADC_WIDTH = 12,
     parameter DDS_WIDTH = 12,
