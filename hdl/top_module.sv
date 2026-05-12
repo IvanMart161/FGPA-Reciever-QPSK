@@ -1,10 +1,11 @@
 `timescale 100ps / 100ps
 
 module top_module #(
-    parameter DATA = 16,
+    parameter DATA = 12,
     parameter LANES = 8 
 ) (
-    input logic                 clk,
+    input logic                 clk_150,
+    input logic                 clk_75,
     input logic                 reset,
 
     // Входы для АЦП
@@ -26,11 +27,13 @@ module top_module #(
     wire sclk_wire;
     wire csb_wire;
 
+    
+
     AD #(
         .DATA(DATA),
         .LANES(LANES) 
     ) adc (
-        .clk(clk),
+        .clk(clk_150),
         .reset(reset),
         .analog_in(ch_analog),
         .clk_ad(clk_ad),
@@ -45,7 +48,7 @@ module top_module #(
         .addr(1),
         .data(2)
     ) master (
-        .clk(clk),
+        .clk(clk_150),
         .reset(reset),
         .start(start_cmd),
         .rnw(rnw_cmd),
@@ -56,4 +59,31 @@ module top_module #(
         .CSB(csb_wire)
     );
 
+    wire [DATA-1:0] i_channel;                          // Синфазный канал (sin)
+    wire [DATA-1:0] q_channel;                          // Квадратурный канал (cos)
+    wire [DATA-1:0] data_adc;                           // Данные с АЦП
+
+    nco #(
+        .DATA(DATA),
+        .ACC(32),
+        .LANES(LANES)
+    ) (
+        .clk(clk_150),
+        .reset(reset),
+
+        .cos_out(i_channel),
+        .sin_out(q_channel)
+    );
+
+    mixer #(
+        .ADC_WIDTH(WIDTH),
+        .DDS_WIDTH(WIDTH),
+        .LANES(LANES)
+    ) (
+        .clk(clk_150),
+        .cos_in(i_channel),
+        .sin_in(q_channel),
+// ДОПИСАТЬ
+
+    );
 endmodule

@@ -7,8 +7,6 @@
 #include <verilated.h>
 #include <verilated_vcd_c.h>
 
-// Убедись, что тут правильное имя твоего топ-модуля! 
-// Если компилируешь top_module.sv, то оставляй Vtop_module.h
 #include "Vtop_module.h" 
 
 vluint64_t main_time = 0;

@@ -1,6 +1,6 @@
 `timescale 100ps / 100ps
 module AD #(
-    parameter DATA = 16,
+    parameter DATA = 12,
     parameter LANES = 8
 ) (
     input logic                          clk,
